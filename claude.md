@@ -148,7 +148,80 @@ Documentation (7.1-7.3) + Infrastructure (8.1-8.3)
 - `tasks.md`: Master task tracking file (35+ tasks with detailed acceptance criteria)
 - `claude.md`: This institutional memory file
 - `backlog.md`: Initial requirements (exists)
+- `demo.m4a`: French audio test file for validation (CRITICAL for testing) - CONFIRMED AVAILABLE
 - Future: `requirements.txt`, main script, documentation
+
+## Demo Audio File
+
+**Location**: `/home/prezbar/dev/audio-to-text2/demo.m4a`
+**Status**: ✅ CONFIRMED AVAILABLE - File exists and ready for testing
+**Purpose**: French speech audio file for testing and validation
+**Importance**: CRITICAL - This file is essential for validating that our implementation works correctly with real French audio
+**Usage**: 
+- Primary test case for all transcription functionality
+- Reference file for accuracy validation
+- French language processing verification
+- GPU performance benchmarking with real data
+- End-to-end testing of French transcription with GPU acceleration
+
+**Integration Points**:
+- Task 2.2: French Language Configuration (test with demo.m4a)
+- Task 6.2: Integration Testing (use demo.m4a for various test scenarios)
+- Task 6.3: Sample Audio Files (demo.m4a serves as primary test sample)
+- All testing tasks should reference this file as the primary validation audio
+- GPU performance validation using real French audio content
+
+**Testing Value**:
+- Provides immediate validation that GPU-accelerated Whisper setup works correctly
+- Enables testing of French language optimization settings
+- Allows measurement of GPU performance with real-world audio data
+- Critical for end-to-end validation of the complete pipeline
+
+## Git Commit Protocol
+
+### Commit Message Standards
+Follow this format for all commits:
+```
+[Task ID]: Brief description of changes
+
+Additional context if needed:
+- Specific accomplishments
+- Critical decisions made
+- Testing results
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+### Commit Workflow
+1. **Before committing**: Run `git status` and `git diff` to review all changes
+2. **Analyze changes**: Ensure all staged changes are related and belong together
+3. **Check task completion**: Verify acceptance criteria are met before marking tasks complete
+4. **Stage files**: Add relevant files to staging area with `git add`
+5. **Create commit**: Use descriptive messages that explain the "why" not just the "what"
+6. **Verify commit**: Run `git status` to confirm commit succeeded
+
+### Critical Rules
+- **Never commit incomplete work** without marking tasks as "in progress"
+- **Always commit completed tasks** before moving to new work
+- **Include both code and documentation updates** in related commits
+- **Update tasks.md** in the same commit as the work being completed
+- **Preserve work across context resets** through regular commits
+
+### Example Commit Messages
+```
+Task 1.2: Complete dependencies configuration with GPU support
+
+- Created requirements.txt with CUDA-enabled PyTorch 2.5.1+cu121
+- Verified GPU setup: NVIDIA GeForce RTX 4070 Ti SUPER (16GB)
+- Successfully tested French transcription with demo.m4a
+- Updated tasks.md to reflect completion
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
 
 ## Communication Protocol
 
@@ -158,5 +231,6 @@ When working across context resets or team member changes:
 3. Follow the task update protocol religiously
 4. Document decisions and discoveries for future sessions
 5. Maintain project continuity through consistent task tracking
+6. **Commit completed work immediately** to preserve progress
 
 This protocol ensures that the audio-to-text project maintains momentum and avoids work duplication regardless of context resets or different AI agents working on the project.
