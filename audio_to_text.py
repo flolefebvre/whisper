@@ -6,7 +6,7 @@ This script converts French M4A audio files to text using OpenAI Whisper
 with mandatory GPU acceleration. The script fails if GPU is not available.
 
 Usage:
-    python audio_to_text.py <audio_file> [model_name] [--output <output_file>]
+    python audio_to_text.py <audio_file> [model_name] [--output <output_file>] [--format <txt|json>]
 
 Arguments:
     audio_file: Path to the M4A audio file to transcribe
@@ -21,6 +21,7 @@ Requirements:
 """
 
 import argparse
+import json
 import os
 import sys
 import traceback
@@ -270,26 +271,62 @@ def validate_french_transcription(text, detected_language=None):
     return analysis
 
 
-def save_transcription(text, output_path):
+def save_transcription(text, output_path, output_format='txt', metadata=None):
     """
-    Save transcribed text to a file.
+    Save transcribed text to a file in the specified format.
     
     Args:
         text (str): Transcribed text to save.
-        output_path (str): Path where to save the text file.
+        output_path (str): Path where to save the file.
+        output_format (str): Output format ('txt' or 'json').
+        metadata (dict): Optional metadata to include in JSON format.
         
     Raises:
         IOError: If file writing fails.
+        PermissionError: If lacking write permissions to the output path.
+        ValueError: If output format is not supported.
     """
+    if output_format not in ['txt', 'json']:
+        raise ValueError(f"Unsupported output format: {output_format}. Supported formats: txt, json")
+    
     try:
         output_file = Path(output_path)
-        output_file.parent.mkdir(parents=True, exist_ok=True)
         
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(text)
+        # Create output directory if it doesn't exist
+        try:
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            raise PermissionError(f"No permission to create directory: {output_file.parent}")
         
-        print(f"Transcription saved to: {output_file.absolute()}")
+        # Check write permissions before attempting to write
+        if output_file.exists() and not os.access(output_file, os.W_OK):
+            raise PermissionError(f"No write permission for existing file: {output_file}")
+        elif not output_file.exists() and not os.access(output_file.parent, os.W_OK):
+            raise PermissionError(f"No write permission for directory: {output_file.parent}")
         
+        # Write content based on format
+        if output_format == 'txt':
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(text)
+        elif output_format == 'json':
+            # Ensure output file has .json extension for JSON format
+            if not output_file.suffix.lower() == '.json':
+                output_file = output_file.with_suffix('.json')
+            
+            json_data = {
+                'transcription': text,
+                'metadata': metadata or {}
+            }
+            
+            with open(output_file, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, ensure_ascii=False, indent=2)
+        
+        print(f"Transcription saved to: {output_file.absolute()} (format: {output_format})")
+        
+    except PermissionError:
+        raise  # Re-raise permission errors with original message
+    except FileNotFoundError as e:
+        raise IOError(f"Invalid output path: {e}")
     except Exception as e:
         raise IOError(f"Failed to save transcription: {e}")
 
@@ -317,6 +354,13 @@ def main():
     parser.add_argument(
         '--output', '-o',
         help='Output file path for transcription. If not specified, prints to console.'
+    )
+    
+    parser.add_argument(
+        '--format', '-f',
+        choices=['txt', 'json'],
+        default='txt',
+        help='Output format for transcription (default: txt). JSON format includes metadata.'
     )
     
     args = parser.parse_args()
@@ -355,12 +399,24 @@ def main():
         # Step 7: Output results
         print("\n=== Results ===")
         if args.output:
-            save_transcription(transcribed_text, args.output)
+            # Prepare metadata for JSON format
+            metadata = {
+                'audio_file': str(audio_path.absolute()),
+                'model_used': model_name,
+                'detected_language': detected_language,
+                'duration_seconds': len(AudioSegment.from_file(str(audio_path))) / 1000.0,
+                'word_count': analysis['word_count'],
+                'text_length': analysis['text_length'],
+                'quality_score': analysis['quality_score']
+            }
+            save_transcription(transcribed_text, args.output, args.format, metadata)
         else:
             print("Transcribed text:")
             print("-" * 50)
             print(transcribed_text)
             print("-" * 50)
+            if args.format == 'json':
+                print("\nNote: JSON format only available when using --output option.")
         
         print("\nFrench audio transcription completed successfully!")
         return 0
