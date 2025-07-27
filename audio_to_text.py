@@ -163,27 +163,40 @@ def load_whisper_model(model_name, device):
 
 def transcribe_audio(model, audio_path):
     """
-    Transcribe audio file using the loaded Whisper model.
+    Transcribe audio file using the loaded Whisper model with French language optimization.
     
     Args:
         model: Loaded Whisper model.
         audio_path (Path): Path to the audio file.
         
     Returns:
-        str: Transcribed text.
+        tuple: (transcribed_text, detected_language) for validation.
         
     Raises:
         RuntimeError: If transcription fails.
     """
     try:
         print(f"Transcribing audio file: {audio_path.name}")
-        print("Processing... (this may take a few moments)")
+        print("Processing with French language optimization...")
         
-        # Transcribe with French language hint for better accuracy
+        # Transcribe with French language optimization
         result = model.transcribe(
             str(audio_path),
-            language='french',  # Optimize for French audio
-            verbose=False       # Reduce console output during processing
+            language='french',      # Set language to French for optimal recognition
+            task='transcribe',      # Explicit transcription task (not translation)
+            temperature=0.0,        # Use deterministic output for consistency
+            best_of=1,             # Use best result (no sampling)
+            beam_size=5,           # Use beam search for better accuracy
+            patience=1.0,          # Patience for beam search
+            length_penalty=1.0,    # No length penalty
+            suppress_tokens=[-1],  # Suppress only the end-of-text token
+            initial_prompt="",     # No initial prompt to let the model detect French naturally
+            condition_on_previous_text=True,  # Use context from previous segments
+            fp16=True,             # Use half precision for faster GPU processing
+            compression_ratio_threshold=2.4,  # Standard threshold for text consistency
+            logprob_threshold=-1.0,            # Standard threshold for confidence
+            no_speech_threshold=0.6,           # Threshold for detecting speech vs silence
+            verbose=False          # Reduce console output during processing
         )
         
         # Extract the transcribed text
@@ -192,11 +205,69 @@ def transcribe_audio(model, audio_path):
         if not transcribed_text:
             raise RuntimeError("Transcription completed but no text was detected in the audio")
         
-        print("Transcription completed successfully!")
-        return transcribed_text
+        # Extract detected language for validation
+        detected_language = result.get('language', 'unknown')
+        print(f"Detected language: {detected_language}")
+        if detected_language != 'french':
+            print(f"Warning: Detected language '{detected_language}' differs from expected 'french'")
+        
+        print("French transcription completed successfully!")
+        return transcribed_text, detected_language
         
     except Exception as e:
         raise RuntimeError(f"Transcription failed: {e}")
+
+
+def validate_french_transcription(text, detected_language=None):
+    """
+    Validate and analyze French transcription quality.
+    
+    Args:
+        text (str): Transcribed text to analyze.
+        detected_language (str): Language detected by Whisper.
+        
+    Returns:
+        dict: Analysis results including quality indicators.
+    """
+    analysis = {
+        'text_length': len(text),
+        'word_count': len(text.split()),
+        'has_french_chars': False,
+        'common_french_words': 0,
+        'quality_score': 'unknown'
+    }
+    
+    # Check for French-specific characters
+    french_chars = 'àâäéèêëîïôöùûüÿçÀÂÄÉÈÊËÎÏÔÖÙÛÜŸÇ'
+    analysis['has_french_chars'] = any(char in text for char in french_chars)
+    
+    # Check for common French words (basic validation)
+    common_french_words = [
+        'le', 'la', 'les', 'de', 'du', 'des', 'un', 'une',
+        'et', 'ou', 'à', 'avec', 'pour', 'dans', 'sur',
+        'je', 'tu', 'il', 'elle', 'nous', 'vous', 'ils', 'elles',
+        'est', 'sont', 'était', 'être', 'avoir', 'faire',
+        'bonjour', 'merci', 'oui', 'non', 'bien', 'très',
+        'français', 'france', 'parler', 'parle'
+    ]
+    
+    text_lower = text.lower()
+    found_words = [word for word in common_french_words if word in text_lower]
+    analysis['common_french_words'] = len(found_words)
+    
+    # Simple quality assessment
+    if analysis['word_count'] == 0:
+        analysis['quality_score'] = 'empty'
+    elif detected_language and detected_language != 'french':
+        analysis['quality_score'] = f'language_mismatch_{detected_language}'
+    elif analysis['common_french_words'] >= 2 or analysis['has_french_chars']:
+        analysis['quality_score'] = 'good_french_indicators'
+    elif analysis['word_count'] >= 3:
+        analysis['quality_score'] = 'acceptable_length'
+    else:
+        analysis['quality_score'] = 'needs_review'
+    
+    return analysis
 
 
 def save_transcription(text, output_path):
@@ -270,9 +341,18 @@ def main():
         
         # Step 5: Transcribe audio
         print("\n=== Transcription ===")
-        transcribed_text = transcribe_audio(model, audio_path)
+        transcribed_text, detected_language = transcribe_audio(model, audio_path)
         
-        # Step 6: Output results
+        # Step 6: Validate French transcription quality
+        print("\n=== French Language Validation ===")
+        analysis = validate_french_transcription(transcribed_text, detected_language)
+        print(f"Word count: {analysis['word_count']}")
+        print(f"Text length: {analysis['text_length']} characters")
+        print(f"French characters detected: {'Yes' if analysis['has_french_chars'] else 'No'}")
+        print(f"Common French words found: {analysis['common_french_words']}")
+        print(f"Quality assessment: {analysis['quality_score']}")
+        
+        # Step 7: Output results
         print("\n=== Results ===")
         if args.output:
             save_transcription(transcribed_text, args.output)
@@ -282,7 +362,7 @@ def main():
             print(transcribed_text)
             print("-" * 50)
         
-        print("\nTranscription completed successfully!")
+        print("\nFrench audio transcription completed successfully!")
         return 0
         
     except KeyboardInterrupt:
