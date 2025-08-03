@@ -12,7 +12,7 @@ Arguments:
     audio_file: Path to the M4A audio file to transcribe
     model_name: Whisper model to use (tiny, base, small, medium, large, large-v2, large-v3)
                 Default: base
-    --output: Optional output file path. If not specified, prints to console.
+    --output: Output file path. Default: output.txt. Specify a different filename to override.
 
 Requirements:
     - NVIDIA GPU with CUDA support
@@ -353,7 +353,8 @@ def main():
     
     parser.add_argument(
         '--output', '-o',
-        help='Output file path for transcription. If not specified, prints to console.'
+        default='output.txt',
+        help='Output file path for transcription (default: output.txt). Specify a different filename to override.'
     )
     
     parser.add_argument(
@@ -398,25 +399,17 @@ def main():
         
         # Step 7: Output results
         print("\n=== Results ===")
-        if args.output:
-            # Prepare metadata for JSON format
-            metadata = {
-                'audio_file': str(audio_path.absolute()),
-                'model_used': model_name,
-                'detected_language': detected_language,
-                'duration_seconds': len(AudioSegment.from_file(str(audio_path))) / 1000.0,
-                'word_count': analysis['word_count'],
-                'text_length': analysis['text_length'],
-                'quality_score': analysis['quality_score']
-            }
-            save_transcription(transcribed_text, args.output, args.format, metadata)
-        else:
-            print("Transcribed text:")
-            print("-" * 50)
-            print(transcribed_text)
-            print("-" * 50)
-            if args.format == 'json':
-                print("\nNote: JSON format only available when using --output option.")
+        # Prepare metadata for JSON format
+        metadata = {
+            'audio_file': str(audio_path.absolute()),
+            'model_used': model_name,
+            'detected_language': detected_language,
+            'duration_seconds': len(AudioSegment.from_file(str(audio_path))) / 1000.0,
+            'word_count': analysis['word_count'],
+            'text_length': analysis['text_length'],
+            'quality_score': analysis['quality_score']
+        }
+        save_transcription(transcribed_text, args.output, args.format, metadata)
         
         print("\nFrench audio transcription completed successfully!")
         return 0
