@@ -2,10 +2,10 @@
 
 ## 📊 Project Progress Dashboard
 
-### Overall Progress: 17% Complete (6/35 tasks)
+### Overall Progress: 17% Complete (6/36 tasks)
 ```
 Foundation & Setup     [████████  ] 3/4  (75%)
-Core Functionality     [███████   ] 3/4  (75%)  
+Core Functionality     [██████    ] 3/5  (60%)  
 User Experience       [          ] 0/4  (0%)
 Configuration         [          ] 0/3  (0%)
 Advanced Features     [          ] 0/3  (0%)
@@ -15,9 +15,10 @@ Infrastructure        [          ] 0/3  (0%)
 ```
 
 ### 🎯 Current Sprint Focus
-**Active Tasks**: Task 2.4 - Error Handling & Logging (⏳ Pending)
+**Active Tasks**: Task 2.4 - Error Handling & Logging (⏳ Pending), Task 2.5 - Language Selection Feature (⏳ Pending)
 **Blockers**: None identified
-**Next Up**: Task 3.1 - Command Line Interface
+**Next Up**: Priority decision needed between Task 2.4 (Error Handling) and Task 2.5 (Language Selection)
+**New Feature Added**: Language selection functionality to replace hardcoded French language
 
 ### 📈 Progress Legend
 - ✅ **Complete** - Task finished and verified
@@ -99,7 +100,7 @@ Infrastructure        [          ] 0/3  (0%)
 - **Completed**: 2025-01-27
 - **Results**: GPU environment fully verified and operational. Successfully tested Whisper transcription with demo.m4a file.
 
-### 2. Core Functionality Development 🚀 Progress: 3/4 (75%)
+### 2. Core Functionality Development 🚀 Progress: 3/5 (60%)
 **Priority**: Critical - Essential features
 
 #### ✅ 2.1 Basic Audio-to-Text Script
@@ -161,6 +162,32 @@ Infrastructure        [          ] 0/3  (0%)
 - **Estimated Effort**: 1-2 hours
 - **Assignee**: _Unassigned_
 - **Final Clarifications Applied**: Error messages should be clear but not include troubleshooting steps
+
+#### ⏳ 2.5 Language Selection Feature
+- [ ] **Task**: Replace hardcoded French language with user-selectable language support
+- **Status**: ⏳ Pending
+- **Acceptance Criteria**:
+  - [ ] Add --language command-line argument with validation
+  - [ ] Support for all Whisper-supported languages (99 languages)
+  - [ ] Auto-detection option ('auto' parameter)
+  - [ ] Maintain backward compatibility (default to French if not specified)
+  - [ ] Update language validation functions to be language-agnostic
+  - [ ] Update output messages to reflect selected/detected language
+  - [ ] Comprehensive help text showing available language options
+- **Dependencies**: Task 2.3
+- **Estimated Effort**: 2-3 hours
+- **Assignee**: _Unassigned_
+- **Priority**: High - User-requested feature enhancement
+- **Implementation Notes**: 
+  - Replace hardcoded 'french' parameter with user input
+  - Refactor validate_french_transcription() to validate_transcription()
+  - Add language code validation against Whisper's supported languages
+  - Update documentation and help text
+- **Subtask Breakdown**:
+  - **2.5.1**: Add language argument and validation infrastructure
+  - **2.5.2**: Refactor transcription functions to support multiple languages
+  - **2.5.3**: Update validation and output messages for language-agnostic operation
+  - **2.5.4**: Add comprehensive language help and documentation
 
 ---
 
@@ -438,7 +465,8 @@ Based on user feedback, the following requirements have been clarified:
 
 ### Whisper Configuration
 - **Model Selection**: User-selectable via command line, default to base model
-- **Language**: Optimized for French language processing
+- **Language**: User-selectable language support with French as default (backward compatibility)
+- **Language Options**: Support all Whisper languages (99 total) plus auto-detection
 - **Acceleration**: Must use CUDA/GPU acceleration for processing
 
 ### Key Architectural Decisions

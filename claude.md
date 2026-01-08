@@ -234,3 +234,28 @@ When working across context resets or team member changes:
 6. **Commit completed work immediately** to preserve progress
 
 This protocol ensures that the audio-to-text project maintains momentum and avoids work duplication regardless of context resets or different AI agents working on the project.
+
+## Feature Requests & Enhancement Ideas
+
+### Language Selection Functionality (User Request)
+**Requested Date**: 2025-08-03
+**Priority**: Future Enhancement
+**Description**: Add language selection functionality to allow users to choose the language for speech recognition rather than having it fixed to French.
+
+**Current State**: 
+- Application is currently optimized specifically for French language processing
+- Language is hardcoded in the implementation
+
+**Proposed Enhancement**:
+- Allow users to select target language for speech recognition
+- Provide interface for language selection (command-line parameter or interactive prompt)
+- Support multiple languages while maintaining the current French optimization as default
+- Ensure language selection integrates with existing GPU-accelerated Whisper implementation
+
+**Implementation Considerations**:
+- Maintain backward compatibility with current French-focused workflow
+- Consider impact on model selection and performance
+- Ensure clear user interface for language selection
+- Document supported languages and any language-specific optimizations
+
+**Status**: Documented for team consideration - not yet prioritized in current task roadmap
