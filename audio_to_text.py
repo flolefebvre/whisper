@@ -6,13 +6,15 @@ This script converts French audio files to text using OpenAI Whisper
 with mandatory GPU acceleration. The script fails if GPU is not available.
 
 Usage:
-    python audio_to_text.py <audio_file> [model_name] [--output <output_file>]
+    python audio_to_text.py <audio_file> [model_name] [--output <output_file>] [--segments [segments_file]] [--words [words_file]]
 
 Arguments:
     audio_file: Path to the audio file to transcribe (M4A, MP3, WAV, etc.)
     model_name: Whisper model to use (tiny, base, small, medium, large, large-v2, large-v3)
                 Default: large-v3
     --output: Output file path. Default: derives from input filename (e.g., audio.m4a → audio.txt)
+    --segments: Save timestamped segments to JSON file. Default: derives from output filename (e.g., audio.txt → audio.segments.json)
+    --words: Save word-level timestamps to file. Default: derives from output filename (e.g., audio.txt → audio.words.json)
 
 Requirements:
     - NVIDIA GPU with CUDA support
@@ -59,7 +61,7 @@ def load_whisper_model(model_name, device):
         raise RuntimeError(f"Failed to load Whisper model '{model_name}': {e}")
 
 
-def transcribe_audio(model, audio_path):
+def transcribe_audio(model:whisper.Whisper, audio_path, enable_word_timestamps=False):
     """Transcribe audio file using the loaded Whisper model with French language optimization."""
     try:
         print(f"Transcribing: {audio_path.name}")
@@ -80,7 +82,8 @@ def transcribe_audio(model, audio_path):
             compression_ratio_threshold=2.4,
             logprob_threshold=-1.0,
             no_speech_threshold=0.6,
-            verbose=False
+            verbose=False,
+            word_timestamps=enable_word_timestamps,
         )
 
         transcribed_text = result['text'].strip()
@@ -92,7 +95,7 @@ def transcribe_audio(model, audio_path):
         if detected_language != 'french':
             print(f"Warning: Detected language '{detected_language}' differs from expected 'french'")
 
-        return transcribed_text
+        return transcribed_text, result['segments']
 
     except Exception as e:
         raise RuntimeError(f"Transcription failed: {e}")
@@ -107,6 +110,48 @@ def save_transcription(text, output_path):
         f.write(text)
 
     print(f"Transcription saved: {output_file}")
+
+
+def save_segments(segments, output_path):
+    """Save transcription segments with timestamps to a JSON file."""
+    import json
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Format segments for readability
+    formatted_segments = [
+        {
+            'id': seg['id'],
+            'start': seg['start'],
+            'end': seg['end'],
+            'text': seg['text'].strip()
+        }
+        for seg in segments
+    ]
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(formatted_segments, f, indent=2, ensure_ascii=False)
+
+    print(f"Segments saved: {output_file}")
+
+
+def save_words(segments, output_path):
+    """Save flattened word-level timestamps to a JSON file."""
+    import json
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Flatten words from all segments, adding segment_id reference
+    all_words = [
+        {**word, 'segment_id': seg['id']}
+        for seg in segments if 'words' in seg
+        for word in seg['words']
+    ]
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(all_words, f, indent=2, ensure_ascii=False)
+
+    print(f"Words saved: {output_file}")
 
 
 def main():
@@ -135,6 +180,22 @@ def main():
         help='Output file path. Default: derives from input filename (e.g., audio.m4a → audio.txt)'
     )
 
+    parser.add_argument(
+        '--segments', '-s',
+        nargs='?',
+        const='',
+        default=None,
+        help='Save transcription segments with timestamps to file. Default: derives from output filename (e.g., audio.txt → audio.segments.json)'
+    )
+
+    parser.add_argument(
+        '--words', '-w',
+        nargs='?',
+        const='',
+        default=None,
+        help='Save word-level timestamps to file. Default: derives from output filename (e.g., audio.txt → audio.words.json)'
+    )
+
     args = parser.parse_args()
 
     try:
@@ -146,6 +207,24 @@ def main():
             if default_output == audio_path:
                 default_output = audio_path.with_name(audio_path.stem + '.out.txt')
             args.output = default_output
+
+        # Determine segments output filename if segments flag is present
+        if args.segments is not None:
+            if args.segments == '':
+                # Derive from output filename
+                output_path = Path(args.output)
+                segments_path = output_path.with_stem(output_path.stem + '.segments').with_suffix('.json')
+            else:
+                segments_path = args.segments
+
+        # Determine words output filename if words flag is present
+        if args.words is not None:
+            if args.words == '':
+                # Derive from output filename
+                output_path = Path(args.output)
+                words_path = output_path.with_stem(output_path.stem + '.words').with_suffix('.json')
+            else:
+                words_path = args.words
 
         # Step 1: Verify GPU availability
         print("=== GPU Check ===")
@@ -163,11 +242,20 @@ def main():
 
         # Step 4: Transcribe audio
         print("\n=== Transcription ===")
-        transcribed_text = transcribe_audio(model, audio_path)
+        enable_words = args.words is not None
+        transcribed_text, segments = transcribe_audio(model, audio_path, enable_word_timestamps=enable_words)
 
         # Step 5: Save transcription
         print("\n=== Saving ===")
         save_transcription(transcribed_text, args.output)
+
+        # Save segments if requested
+        if args.segments is not None:
+            save_segments(segments, segments_path)
+
+        # Save words if requested
+        if args.words is not None:
+            save_words(segments, words_path)
 
         print("\nTranscription completed successfully!")
         return 0
