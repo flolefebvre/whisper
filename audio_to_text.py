@@ -6,7 +6,7 @@ This script converts French audio files to text using OpenAI Whisper
 with mandatory GPU acceleration. The script fails if GPU is not available.
 
 Usage:
-    python audio_to_text.py <audio_file> [model_name] [--output <output_file>] [--segments [segments_file]] [--words [words_file]]
+    python audio_to_text.py <audio_file> [model_name] [--output <output_file>] [--segments [segments_file]] [--words [words_file]] [--json-sentences [json_file]]
 
 Arguments:
     audio_file: Path to the audio file to transcribe (M4A, MP3, WAV, etc.)
@@ -15,6 +15,7 @@ Arguments:
     --output: Output file path. Default: derives from input filename (e.g., audio.m4a → audio.txt)
     --segments: Save timestamped segments to JSON file. Default: derives from output filename (e.g., audio.txt → audio.segments.json)
     --words: Save word-level timestamps to file. Default: derives from output filename (e.g., audio.txt → audio.words.json)
+    --json-sentences: Save as JSON with sentence-level segments. Default: derives from output filename (e.g., audio.txt → audio.json)
 
 Requirements:
     - NVIDIA GPU with CUDA support
@@ -23,11 +24,20 @@ Requirements:
 """
 
 import argparse
+import json
+import re
 import sys
+import warnings
 from pathlib import Path
 
 import torch
 import whisper
+
+# Suppress FutureWarning from torch.load in whisper library
+warnings.filterwarnings('ignore', category=FutureWarning, module='whisper')
+
+# Sentence-ending punctuation pattern (compiled once at module level)
+SENTENCE_ENDERS = re.compile(r'[.!?…]$')
 
 
 def check_gpu_availability():
@@ -95,7 +105,7 @@ def transcribe_audio(model:whisper.Whisper, audio_path, enable_word_timestamps=F
         if detected_language != 'french':
             print(f"Warning: Detected language '{detected_language}' differs from expected 'french'")
 
-        return transcribed_text, result['segments']
+        return transcribed_text, result['segments'], result
 
     except Exception as e:
         raise RuntimeError(f"Transcription failed: {e}")
@@ -114,7 +124,6 @@ def save_transcription(text, output_path):
 
 def save_segments(segments, output_path):
     """Save transcription segments with timestamps to a JSON file."""
-    import json
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -137,7 +146,6 @@ def save_segments(segments, output_path):
 
 def save_words(segments, output_path):
     """Save flattened word-level timestamps to a JSON file."""
-    import json
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -152,6 +160,168 @@ def save_words(segments, output_path):
         json.dump(all_words, f, indent=2, ensure_ascii=False)
 
     print(f"Words saved: {output_file}")
+
+
+def _derive_output_path(arg_value, base_output_path, suffix_modifier=None):
+    """
+    Derive output path from argument value or base output path.
+
+    Args:
+        arg_value: The argument value ('' for auto-derive, path string for explicit, None for not set)
+        base_output_path: The base output path to derive from
+        suffix_modifier: Optional suffix modifier (e.g., '.segments' for audio.segments.json)
+                        If None, just changes extension to .json
+
+    Returns:
+        Derived path, or None if arg_value is None
+    """
+    if arg_value is None:
+        return None
+
+    if arg_value == '':
+        # Auto-derive from base output path
+        output_path = Path(base_output_path)
+        if suffix_modifier:
+            return output_path.with_stem(output_path.stem + suffix_modifier).with_suffix('.json')
+        else:
+            return output_path.with_suffix('.json')
+    else:
+        # Explicit path provided
+        return arg_value
+
+
+def _clean_whisper_spacing(text):
+    """
+    Fix spacing issues from Whisper's word tokenization.
+
+    Whisper splits contractions and hyphenated words, creating spaces like:
+    "c 'est" → "c'est"
+    "Maison -Blanche" → "Maison-Blanche"
+
+    Args:
+        text: Text with potential spacing issues
+
+    Returns:
+        Cleaned text with proper spacing
+    """
+    # Remove space before apostrophes
+    text = re.sub(r"\s+'", "'", text)
+
+    # Remove spaces around hyphens
+    text = re.sub(r'\s+-\s+', '-', text)  # "word - word" → "word-word"
+    text = re.sub(r'\s+-', '-', text)      # "word -word" → "word-word"
+    text = re.sub(r'-\s+', '-', text)      # "word- word" → "word-word"
+
+    return text
+
+
+def create_sentence_segments(full_text, segments_with_words):
+    """
+    Split transcription into sentence-level segments with word timestamps.
+
+    Uses word-level timestamps to build sentences by detecting punctuation boundaries.
+    This is more reliable than trying to match pre-split sentences to words.
+
+    Args:
+        full_text: Complete transcription text (used as fallback if no words available)
+        segments_with_words: Whisper segments containing word timestamps
+
+    Returns:
+        List of sentence segments with structure:
+        [{'id': int, 'start': float, 'end': float, 'text': str}, ...]
+    """
+    # Flatten all words from Whisper segments
+    all_words = []
+    for seg in segments_with_words:
+        if 'words' in seg:
+            all_words.extend(seg['words'])
+
+    # Fallback: if no words available, return single segment with full text
+    if not all_words:
+        return [{
+            'id': 1,
+            'start': 0.0,
+            'end': 0.0,
+            'text': full_text.strip()
+        }]
+
+    # Build sentences by iterating through words and detecting punctuation boundaries
+    sentence_segments = []
+    sentence_id = 1
+    current_sentence_words = []
+    current_sentence_start = None
+
+    for word_obj in all_words:
+        word_text = word_obj['word'].strip()
+        if not word_text:
+            continue
+
+        # Track start time of first word in sentence
+        if current_sentence_start is None:
+            current_sentence_start = word_obj['start']
+
+        current_sentence_words.append(word_text)
+
+        # Check if this word ends a sentence
+        if SENTENCE_ENDERS.search(word_text):
+            # Build sentence text and clean up spacing issues
+            sentence_text = ' '.join(current_sentence_words).strip()
+            sentence_text = _clean_whisper_spacing(sentence_text)
+
+            segment = {
+                'id': sentence_id,
+                'start': current_sentence_start,
+                'end': word_obj['end'],
+                'text': sentence_text
+            }
+            sentence_segments.append(segment)
+
+            # Reset for next sentence
+            sentence_id += 1
+            current_sentence_words = []
+            current_sentence_start = None
+
+    # Handle remaining words that don't end with punctuation
+    if current_sentence_words:
+        sentence_text = ' '.join(current_sentence_words).strip()
+        sentence_text = _clean_whisper_spacing(sentence_text)
+        segment = {
+            'id': sentence_id,
+            'start': current_sentence_start,
+            'end': all_words[-1]['end'],
+            'text': sentence_text
+        }
+        sentence_segments.append(segment)
+
+    return sentence_segments
+
+
+def save_json_sentences(result, sentence_segments, output_path):
+    """
+    Save transcription as JSON with sentence-level segments.
+
+    Args:
+        result: Full Whisper transcription result (contains language info)
+        sentence_segments: List of sentence segments from create_sentence_segments()
+        output_path: Path to save JSON file
+    """
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    # Calculate duration from last segment's end time
+    duration = sentence_segments[-1]['end'] if sentence_segments else 0.0
+
+    # Build output structure
+    output_data = {
+        'duration': duration,
+        'language': result.get('language', 'fr'),
+        'segments': sentence_segments
+    }
+
+    with open(output_file, 'w', encoding='utf-8') as f:
+        json.dump(output_data, f, indent=2, ensure_ascii=False)
+
+    print(f"JSON sentences saved: {output_file}")
 
 
 def main():
@@ -196,6 +366,14 @@ def main():
         help='Save word-level timestamps to file. Default: derives from output filename (e.g., audio.txt → audio.words.json)'
     )
 
+    parser.add_argument(
+        '--json-sentences', '-j',
+        nargs='?',
+        const='',
+        default=None,
+        help='Save transcription as JSON with sentence-level segments. Default: derives from output filename (e.g., audio.txt → audio.json)'
+    )
+
     args = parser.parse_args()
 
     try:
@@ -208,23 +386,10 @@ def main():
                 default_output = audio_path.with_name(audio_path.stem + '.out.txt')
             args.output = default_output
 
-        # Determine segments output filename if segments flag is present
-        if args.segments is not None:
-            if args.segments == '':
-                # Derive from output filename
-                output_path = Path(args.output)
-                segments_path = output_path.with_stem(output_path.stem + '.segments').with_suffix('.json')
-            else:
-                segments_path = args.segments
-
-        # Determine words output filename if words flag is present
-        if args.words is not None:
-            if args.words == '':
-                # Derive from output filename
-                output_path = Path(args.output)
-                words_path = output_path.with_stem(output_path.stem + '.words').with_suffix('.json')
-            else:
-                words_path = args.words
+        # Derive output paths for optional outputs
+        segments_path = _derive_output_path(args.segments, args.output, '.segments')
+        words_path = _derive_output_path(args.words, args.output, '.words')
+        json_path = _derive_output_path(args.json_sentences, args.output)
 
         # Step 1: Verify GPU availability
         print("=== GPU Check ===")
@@ -242,20 +407,23 @@ def main():
 
         # Step 4: Transcribe audio
         print("\n=== Transcription ===")
-        enable_words = args.words is not None
-        transcribed_text, segments = transcribe_audio(model, audio_path, enable_word_timestamps=enable_words)
+        enable_words = args.words is not None or args.json_sentences is not None
+        transcribed_text, segments, result = transcribe_audio(model, audio_path, enable_word_timestamps=enable_words)
 
         # Step 5: Save transcription
         print("\n=== Saving ===")
         save_transcription(transcribed_text, args.output)
 
-        # Save segments if requested
-        if args.segments is not None:
+        # Save optional outputs if requested
+        if segments_path:
             save_segments(segments, segments_path)
 
-        # Save words if requested
-        if args.words is not None:
+        if words_path:
             save_words(segments, words_path)
+
+        if json_path:
+            sentence_segments = create_sentence_segments(transcribed_text, segments)
+            save_json_sentences(result, sentence_segments, json_path)
 
         print("\nTranscription completed successfully!")
         return 0
